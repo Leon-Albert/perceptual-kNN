@@ -1,7 +1,6 @@
 import torch
 import numpy as np
-from src.forward import *
-
+from forward import *
 
 class FIRFilter(torch.nn.Module):
     """FIR pre-emphasis filtering module.
@@ -90,13 +89,6 @@ class FIRFilter(torch.nn.Module):
             input, self.fir.weight.data, padding=self.ntaps // 2
         )
         return input
-    
-
-
-
-theta2 = [2.4498039582702016,0.6461548540239277,-1.7064752202175573,-1.0410779935838828,0.0562217157838597]
-theta1 = [2.490387548888748,0.5584495826467211,-4.862062785726994,-2.9690459969445326,0.965225942518418]
-logscale = True
 
 F = FIRFilter()
 def Phi(x):
@@ -104,6 +96,11 @@ def Phi(x):
     x = x.to(torch.float)
     x = x.to("cpu") #TODO check for CUDA
     return F.forward(x)
+
+
+theta2 = [2.4498039582702016,0.6461548540239277,-1.7064752202175573,-1.0410779935838828,0.0562217157838597]
+theta1 = [2.490387548888748,0.5584495826467211,-4.862062785726994,-2.9690459969445326,0.965225942518418]
+logscale = True
 
 S = pnp_forward_factory(logscale,Phi)
 
