@@ -1,5 +1,5 @@
 import functools
-import ftm as ftm
+import src.ftm as ftm
 
 def x_from_theta(theta, logscale):
     """Compute x = g(theta)"""
