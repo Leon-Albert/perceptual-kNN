@@ -1,5 +1,7 @@
 import time
 from ftm import rectangular_drum
+import numpy as np
+import pandas as pd
 
 def find_neighbour(dataFramePath,nb_neighbour,dist,return_time=False):
     distance_calculation = 0
@@ -18,7 +20,7 @@ def find_neighbour(dataFramePath,nb_neighbour,dist,return_time=False):
     
     data = pd.read_csv(dataFramePath)
     data_size = data.size
-    parameters_name = ["omega","tau","p","D","alpha"]
+    parameters_name = ["omega","tau","p","d","alpha"]
     
     #List initialization
     closest_neighbour =  [[0]*len(parameters_name)]*nb_neighbour
@@ -58,11 +60,9 @@ def find_neighbour(dataFramePath,nb_neighbour,dist,return_time=False):
         return closest_neighbour,[distance_calculation,node_exploration]
     return closest_neighbour
 
-theta5 = [2.448304103287737,0.6724932913451673,-1.4882183960726143,-1.1237355795715704,0.9775323978804632]
-theta6= [2.559894429686223,0.5765175855542937,-1.020964798228077,-0.1456230260198473,0.6825837860862676]
-
-
 # # Example of usage
+#theta5 = [2.448304103287737,0.6724932913451673,-1.4882183960726143,-1.1237355795715704,0.9775323978804632]
+#theta6= [2.559894429686223,0.5765175855542937,-1.020964798228077,-0.1456230260198473,0.6825837860862676]
 # def createNaiveDist(theta_ref,phi):
 #     #calculation of the audio for the reference node
 #     audio_ref = rectangular_drum(theta_ref, True,**constants)
