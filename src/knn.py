@@ -1,5 +1,5 @@
 import time
-from ftm import rectangular_drum
+from src.ftm import rectangular_drum
 import numpy as np
 import pandas as pd
 
@@ -19,7 +19,7 @@ def find_neighbour(dataFramePath,nb_neighbour,dist,return_time=False):
     }
     
     data = pd.read_csv(dataFramePath)
-    data_size = data.size
+    data_size = int(data.size/6)
     parameters_name = ["omega","tau","p","d","alpha"]
     
     #List initialization
