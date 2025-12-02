@@ -1,11 +1,10 @@
-import time
 from src.ftm import rectangular_drum
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 import torch
+from rich.progress import track,Progress,BarColumn, TextColumn, SpinnerColumn, MofNCompleteColumn, TimeElapsedColumn, TimeRemainingColumn
 
-def find_neighbour(DataFrame_path,ref_index_list,k,dist,return_time=False,show_progress=False):
+def find_neighbour(DataFrame_path,ref_index_list,k,dist,show_progress=False):
     # Initialize 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     data = torch.from_numpy(pd.read_csv(DataFrame_path, index_col=0).to_numpy()).to(device).to(float)
@@ -20,23 +19,28 @@ def find_neighbour(DataFrame_path,ref_index_list,k,dist,return_time=False,show_p
         tensor_refs[i,:] = data[id,:]
 
     # Find the distances for each t_ref to all the candidates. 
+    progress = Progress(
+            TextColumn("[MAIN] Iterating References"),
+            SpinnerColumn(),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+    )
     if show_progress:
-        iterate = tqdm(range(tensor_refs.size(dim=0)))
+        iterator = progress.track(range(tensor_refs.size(dim=0)))
     else:
-        iterate = range(tensor_refs.size(dim=0))
+        iterator = range(tensor_refs.size(dim=0))
 
-    for i_ref in iterate:
-        
-        dist_tensor = dist(data,tensor_refs[i_ref,:])
-        
-        # Add the k shortest distances to the matrix
-        dist_tensor,sort_indices = torch.sort(dist_tensor)
-
-        dist_i[0,k*i_ref:k*(i_ref+1)] = i_ref*torch.ones(1,k)
-        dist_i[1,k*i_ref:k*(i_ref+1)] = sort_indices[0:k].to(device)
-        dist_v[k*i_ref:k*(i_ref+1)] = dist_tensor[0:k]
-        
-        # Remove the ref point from the futur candidates 
-        data = torch.cat((data[:i_ref],data[i_ref+1:]))
+    with progress:
+        for i_ref in iterator:
+            dist_tensor = dist(data,tensor_refs[i_ref,:],show_progress=show_progress)
+            # Add the k shortest distances to the matrix
+            dist_tensor,sort_indices = torch.sort(dist_tensor)
+            dist_i[0,k*i_ref:k*(i_ref+1)] = i_ref*torch.ones(1,k)
+            dist_i[1,k*i_ref:k*(i_ref+1)] = sort_indices[0:k].to(device)
+            dist_v[k*i_ref:k*(i_ref+1)] = dist_tensor[0:k]
+            # Remove the ref point from the futur candidates 
+            data = torch.cat((data[:i_ref],data[i_ref+1:]))
 
     return dist_i.to(int),dist_v
