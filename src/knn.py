@@ -36,15 +36,30 @@ def find_neighbour(DataFrame_path,ref_index_list,k,dist,show_progress=False):
     with progress:
         for i_ref in iterator:
             dist_tensor = dist(data,tensor_refs[i_ref,:],show_progress=show_progress)
-            # Add the k shortest distances to the matrix
-            dist_tensor,sort_indices = torch.sort(dist_tensor)
+
+            # Add the k shortest distances
+            dist_tensor_sorted,sort_indices = torch.sort(dist_tensor, stable=True)
+
             dist_i[0,k*i_ref:k*(i_ref+1)] = i_ref*torch.ones(1,k)
             dist_i[1,k*i_ref:k*(i_ref+1)] = sort_indices[0:k].to(device)
-            dist_v[k*i_ref:k*(i_ref+1)] = dist_tensor[0:k]
+
+            dist_v[k*i_ref:k*(i_ref+1)] = dist_tensor_sorted[0:k]
+
             # Remove the ref point from the futur candidates 
             data = torch.cat((data[:i_ref],data[i_ref+1:]))
 
     return dist_i.to(int),dist_v
+
+
+
+
+
+
+
+
+
+
+
 
 def find_neighbour_backup(dataFramePath,nb_neighbour,dist,return_time=False,show_progress=False):
     distance_calculation = 0
