@@ -97,4 +97,3 @@ def percep2physics(w1, tau1, p, D, l, lm):
     S4 = (l/np.pi)**4 * ((D*w1)**2 + (p/tau1)**2)
     c2 = (l/np.pi)**2 * (w1**2 * (1-D**2) + (1-p**2)/tau1**2)
     return d1, d3, S4, c2
-

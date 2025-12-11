@@ -1,24 +1,11 @@
-import auraloss
 import functools
 import torch
 
-def STFT_magnitude(x,fft_size,hop_size,win_length,window):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    x_stft = torch.stft(
-        x,
-        fft_size,
-        hop_size,
-        win_length,
-        window(win_length).to(device),
-        return_complex=True,
-        center=False
-    )
-    return torch.abs(x_stft)
-
 def STFT_loss(input,target,fft_size,hop_size,win_length,window):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     # Compute the STFTs
-    x_mag = STFT_magnitude(input ,fft_size,hop_size,win_length,window)
-    y_mag = STFT_magnitude(target,fft_size,hop_size,win_length,window)
+    x_mag = torch.abs(torch.stft(input,fft_size,hop_size,win_length,window(win_length).to(device),return_complex=True,center=False))
+    y_mag = torch.abs(torch.stft(target,fft_size,hop_size,win_length,window(win_length).to(device),return_complex=True,center=False))
     # Compute the L1 norms
     eps = 1e-8
     log_mag_loss = torch.sum(torch.abs(torch.log(x_mag+eps)-torch.log(y_mag+eps)))
@@ -31,7 +18,7 @@ def STFT_losses_mean(x, y, stft_losses):
     for f in stft_losses:
         mrstft_loss += f(x.unsqueeze(0).to(torch.float), y.unsqueeze(0).to(torch.float))
     mrstft_loss /= len(stft_losses)
-    return mrstft_loss
+    return mrstft_loss / 1e-6
 
 def MSS_factory(fft_sizes = [1024, 2048, 512],hop_sizes = [120, 240, 50],win_lengths = [600, 1200, 240]):
     stft_losses = []

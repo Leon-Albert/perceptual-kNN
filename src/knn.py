@@ -1,9 +1,11 @@
 import torch
+import functools
 from src.distances import distance_factory
 from src.jacobian import M_factory
 from src.ftm import rectangular_drum
+from src.ftm import constants as FTM_constants
 
-def KnnG(DF,k,phi_factory,logscale,FTM_constants,distance_method,update_pb=None):
+def KnnG(DF,k,phi_factory,logscale,distance_method,update_pb=None):
     """
     Return T_knn = [[theta_r1_1nn,theta_r1_2nn,...],[theta_r2_1nn,theta_r2_2nn,...],...]
     
@@ -13,42 +15,55 @@ def KnnG(DF,k,phi_factory,logscale,FTM_constants,distance_method,update_pb=None)
     update_pb: fct for updating a progress bar outside of this scope (optional)
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    n = DF.size(dim=0)
 
-    # Compute tensor of the neighbours TODO improve this with knn tricks
-    T_knn = torch.zeros(DF.size(dim=0),k,DF.size(dim=1)).to(device).to(float)
-    for i_r in range(DF.size(dim=0)):
-        theta_r = DF[i_r,:] 
-        x_r = rectangular_drum(theta_r, logscale, **FTM_constants)
+    T_knn = torch.zeros(n,k,DF.size(dim=1)).to(device).to(float)
 
-        # Initialize needed functions that depends on theta_r
-        phi = phi_factory(x_r)
-        distance = distance_factory(phi,logscale,FTM_constants,distance_method)
-        
-        # Precompute the distance parameters if needed by method
+    # Loop over each point as a reference
+    for i_r in range(n):
+        theta_r = DF[i_r,:]
+
+        # Precompute the distance function for this reference & method
         if(distance_method=='Bruteforce'):
+            x_r = rectangular_drum(theta_r, logscale, **FTM_constants)
+            phi = phi_factory(x_r)
             S_r = phi(x_r)
+            distance = distance_factory(distance_method,phi=phi,logscale=logscale)
+
         elif(distance_method=='Perceptual-KNN'):
-            M = M_factory(logscale,phi,FTM_constants)
+            x_r = rectangular_drum(theta_r, logscale, **FTM_constants)
+            phi = phi_factory(x_r)
+            M = M_factory(logscale,phi)
             M_r = M(theta_r)
+            distance = distance_factory(distance_method)
+
+        elif(distance_method=='P-loss'):
+            distance = distance_factory(distance_method)
 
         # Compute distances to each candidate
-        T_dist = torch.zeros(DF.size(dim=0),1)
-        for i_c in range(DF.size(dim=0)):
-            theta_c = DF[i_c,:]
+        if(distance_method=='P-loss'):
+            distance_batch = torch.func.vmap(functools.partial(distance,theta_r=theta_r))
+            T_dist = distance_batch(DF)
 
-            if(distance_method=='P-loss'):
-                T_dist[i_c] = distance(theta_c,theta_r)
-            elif(distance_method=='Bruteforce'):
+        elif(distance_method=='Perceptual-KNN'):
+            distance_batch = torch.func.vmap(functools.partial(distance,theta_r=theta_r,M_r=M_r))
+            T_dist = distance_batch(DF)
+
+        elif(distance_method=='Bruteforce'):
+            # Batching not supported for stft so no point in vmap
+            T_dist = torch.zeros(DF.size(dim=0),1)
+            for i_c in range(DF.size(dim=0)):
+                theta_c = DF[i_c,:]
                 T_dist[i_c] = distance(theta_c,S_r)
-            elif(distance_method=='Perceptual-KNN'):
-                T_dist[i_c] = distance(theta_c,theta_r,M_r)
+            T_dist = torch.transpose(T_dist,0,1).squeeze(0)
 
-            if(update_pb):
-                update_pb(1)
-
+            
+        if(update_pb):
+            update_pb(n)    
+        
         # Sort the distances to get the k nearest
-        T_dist_sorted,i_c_sorted = torch.sort(torch.transpose(T_dist,0,1))
+        T_dist_sorted,i_c_sorted = torch.sort(T_dist)
         for i_k in range(k):
-            T_knn[i_r,i_k,:] = DF[i_c_sorted[0,i_k],:]
+            T_knn[i_r,i_k,:] = DF[i_c_sorted[i_k],:]
                     
     return T_knn
