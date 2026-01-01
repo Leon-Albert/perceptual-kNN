@@ -5,7 +5,7 @@ from src.jacobian import M_factory
 from src.ftm import rectangular_drum
 from src.ftm import constants as FTM_constants
 
-def KnnG(DF,k,phi_factory,logscale,distance_method,update_pb=None):
+def KnnG(DF,k,phi,logscale,distance_method,update_pb=None):
     """
     Return T_knn = [[theta_r1_1nn,theta_r1_2nn,...],[theta_r2_1nn,theta_r2_2nn,...],...]
     
@@ -17,26 +17,20 @@ def KnnG(DF,k,phi_factory,logscale,distance_method,update_pb=None):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     n = DF.size(dim=0)
 
-    T_knn = torch.zeros(n,k,DF.size(dim=1)).to(device).to(float)
-
+    T_knn = torch.zeros(n,k,DF.size(dim=1)).to(device)
     # Loop over each point as a reference
     for i_r in range(n):
+
         theta_r = DF[i_r,:]
 
         # Precompute the distance function for this reference & method
         if(distance_method=='Bruteforce'):
-            x_r = rectangular_drum(theta_r, logscale, **FTM_constants)
-            phi = phi_factory(x_r)
-            S_r = phi(x_r)
+            S_r = phi(rectangular_drum(theta_r, logscale, **FTM_constants))
             distance = distance_factory(distance_method,phi=phi,logscale=logscale)
-
         elif(distance_method=='Perceptual-KNN'):
-            x_r = rectangular_drum(theta_r, logscale, **FTM_constants)
-            phi = phi_factory(x_r)
             M = M_factory(logscale,phi)
             M_r = M(theta_r)
             distance = distance_factory(distance_method)
-
         elif(distance_method=='P-loss'):
             distance = distance_factory(distance_method)
 
@@ -44,20 +38,19 @@ def KnnG(DF,k,phi_factory,logscale,distance_method,update_pb=None):
         if(distance_method=='P-loss'):
             distance_batch = torch.func.vmap(functools.partial(distance,theta_r=theta_r))
             T_dist = distance_batch(DF)
-
         elif(distance_method=='Perceptual-KNN'):
             distance_batch = torch.func.vmap(functools.partial(distance,theta_r=theta_r,M_r=M_r))
             T_dist = distance_batch(DF)
-
         elif(distance_method=='Bruteforce'):
-            # Batching not supported for stft so no point in vmap
+            #distance_batch = torch.func.vmap(functools.partial(distance,S_r=S_r))
+            #T_dist = distance_batch(DF)
+            # Batching not supported for FTM so can't use vmap for bruteforce
             T_dist = torch.zeros(DF.size(dim=0),1)
             for i_c in range(DF.size(dim=0)):
                 theta_c = DF[i_c,:]
                 T_dist[i_c] = distance(theta_c,S_r)
             T_dist = torch.transpose(T_dist,0,1).squeeze(0)
 
-            
         if(update_pb):
             update_pb(n)    
         

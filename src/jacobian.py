@@ -30,7 +30,7 @@ def M_forward(theta, G):
     """
     Return M(theta,G) = G(theta).T * G(theta) = grad(Phi o g)(theta0).T * grad(Phi o g)(theta0)
     """
-    return M_from_G(G(theta).unsqueeze(0))
+    return M_from_G(G(theta))
 
 def M_factory(logscale,Phi):
     """
@@ -42,7 +42,7 @@ def M_factory(logscale,Phi):
     """
     S_from_theta = S_factory(logscale,Phi)
     G = torch.func.jacfwd(S_from_theta)
-    #G = functools.partial(torch.autograd.functional.jacobian, func=S_from_theta, create_graph=False) #,strategy="forward-mode",vectorize=True) 
+    #G = functools.partial(torch.autograd.functional.jacobian, func=S_from_theta, create_graph=False,strategy="forward-mode",vectorize=True) 
     return functools.partial(M_forward,G=G)
 
 
