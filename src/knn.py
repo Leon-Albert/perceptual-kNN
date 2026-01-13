@@ -27,10 +27,12 @@ def KnnG(DF,k,phi,logscale,distance_method,update_pb=None):
         if(distance_method=='Bruteforce'):
             S_r = phi(rectangular_drum(theta_r, logscale, **FTM_constants))
             distance = distance_factory(distance_method,phi=phi,logscale=logscale)
+
         elif(distance_method=='Perceptual-KNN'):
             M = M_factory(logscale,phi)
             M_r = M(theta_r)
             distance = distance_factory(distance_method)
+
         elif(distance_method=='P-loss'):
             distance = distance_factory(distance_method)
 
@@ -38,13 +40,12 @@ def KnnG(DF,k,phi,logscale,distance_method,update_pb=None):
         if(distance_method=='P-loss'):
             distance_batch = torch.func.vmap(functools.partial(distance,theta_r=theta_r))
             T_dist = distance_batch(DF)
+
         elif(distance_method=='Perceptual-KNN'):
             distance_batch = torch.func.vmap(functools.partial(distance,theta_r=theta_r,M_r=M_r))
             T_dist = distance_batch(DF)
+
         elif(distance_method=='Bruteforce'):
-            #distance_batch = torch.func.vmap(functools.partial(distance,S_r=S_r))
-            #T_dist = distance_batch(DF)
-            # Batching not supported for FTM so can't use vmap for bruteforce
             T_dist = torch.zeros(DF.size(dim=0),1)
             for i_c in range(DF.size(dim=0)):
                 theta_c = DF[i_c,:]
