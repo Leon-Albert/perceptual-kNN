@@ -14,3 +14,9 @@ Specific packages :
 ## Running the KNN tests 
 
 All the code to run is in the main notebook
+
+## Misc
+
+- FTM Synth tests in examples folder
+
+- For (Phi o g)(theta) pre-computations see how it's done in src/jacobian.py
