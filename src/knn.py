@@ -1,80 +1,54 @@
-import time
-from src.ftm import rectangular_drum
-import numpy as np
-import pandas as pd
+import torch
+import functools
+from src.distances import distance_factory
+from src.jacobian import M_factory
+from src.jacobian import compute_all_S
 
-def find_neighbour(dataFramePath,nb_neighbour,dist,return_time=False):
-    distance_calculation = 0
-    node_exploration = 0
-    total_time = time.time()
-    constants = {
-        "x1": 0.4,
-        "x2": 0.4,
-        "h": 0.03,
-        "l0": np.pi,
-        "m1": 10,
-        "m2": 10,
-        "sr": 22050,
-        "dur":2**16
-    }
+def Knn(DF,i_r,k,phi,logscale,distance_method):
+    """
+    Return T_knn = [[theta_r1_1nn,theta_r1_2nn,...],[theta_r2_1nn,theta_r2_2nn,...],...]
     
-    data = pd.read_csv(dataFramePath)
-    data_size = int(data.size/6)
-    parameters_name = ["omega","tau","p","d","alpha"]
-    
-    #List initialization
-    closest_neighbour =  [[0]*len(parameters_name)]*nb_neighbour
-    smallest_distances = [np.inf for z in range(nb_neighbour)]
-    
-    #graph exploration
-    for i in range(data_size):
-        #Get phi of the neighbour
-        parameterLine = data.iloc[[i]]
-        theta = np.array([ parameterLine[parameters_name[k]].iloc[0] for k in range(len(parameters_name)) ])
-        
-        time1 = time.time()
-        dist_n = dist(theta)
-        distance_calculation += time.time() - time1
-        time1 = time.time()
-        #check if the neighbour is one of the closest
-        if (dist_n < smallest_distances[-1]):
-            #Find position
-            founded = False
-            for k in range(nb_neighbour-2,0,-1):
-                if (dist_n > smallest_distances[k] and not(founded)):
-                    smallest_distances.insert(k+1,dist_n)
-                    closest_neighbour.insert(k+1,theta)
-                    #Delete the furthest neighbour
-                    smallest_distances = smallest_distances[:-1]
-                    closest_neighbour = closest_neighbour[:-1]
-                    founded = True
-            if (not(founded)):
-                smallest_distances.insert(0,dist_n)
-                closest_neighbour.insert(0,theta)
-                #Delete the furthest neighbour
-                smallest_distances = smallest_distances[:-1]
-                closest_neighbour = closest_neighbour[:-1] 
-        node_exploration += time.time() - time1
-    total_time = time.time() - total_time
-    if(return_time):
-        return closest_neighbour,[distance_calculation,node_exploration]
-    return closest_neighbour
+    DF: dataframe of the points*
+    i_r: if of the reference point
+    k: neighbours count
+    distance_method: method for computing the distance (P-loss/Bruteforce/Perceptual-KNN)
+    """
 
-# # Example of usage
-#theta5 = [2.448304103287737,0.6724932913451673,-1.4882183960726143,-1.1237355795715704,0.9775323978804632]
-#theta6= [2.559894429686223,0.5765175855542937,-1.020964798228077,-0.1456230260198473,0.6825837860862676]
-# def createNaiveDist(theta_ref,phi):
-#     #calculation of the audio for the reference node
-#     audio_ref = rectangular_drum(theta_ref, True,**constants)
-#     phi_ref = phi(audio_ref)
-#     def naiveDistFunction(theta):
-#         audio_node = rectangular_drum(theta, True,**constants)
-#         phi_node = phi(audio_node)
-#         return torch.sqrt(torch.sum(torch.pow(torch.subtract(phi_ref, phi_node), 2), dim=0))
-#     return naiveDistFunction
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# def phi_test(x):
-#     return x
+    T_knn = torch.zeros(k,DF.size(dim=1)).to(device)
+
+    theta_r = DF[i_r,:]
+
+    # Compute everything needed for this method
+    if(distance_method=='Bruteforce'):
+        T_S = compute_all_S(DF,phi,logscale) #TODO Should be pre-computed once for the full dataset instead
+        distance = distance_factory(distance_method)
+
+    elif(distance_method=='Perceptual-KNN'):
+        M = M_factory(logscale,phi)
+        M_r = M(theta_r)
+        distance = distance_factory(distance_method)
+
+    elif(distance_method=='P-loss'):
+        distance = distance_factory(distance_method)
+
+    # Compute distances to each candidate
+    if(distance_method=='P-loss'):
+        distance_batch = torch.func.vmap(functools.partial(distance,theta_r=theta_r))
+        T_dist = distance_batch(DF)
+
+    elif(distance_method=='Perceptual-KNN'):
+        distance_batch = torch.func.vmap(functools.partial(distance,theta_r=theta_r,M_r=M_r))
+        T_dist = distance_batch(DF)
+
+    elif(distance_method=='Bruteforce'):
+        distance_batch = torch.func.vmap(functools.partial(distance,S_r=T_S[i_r,:]))
+        T_dist = distance_batch(T_S)
     
-# dist_test = createNaiveDist(theta6,phi_test)
-# thetaList = find_neighbour('full_param_log.csv',20,dist_test,False)
+    # Sort the distances to get the k nearest
+    T_dist_sorted,i_c_sorted = torch.sort(T_dist)
+    for i_k in range(k):
+        T_knn[i_k,:] = DF[i_c_sorted[i_k],:]
+                    
+    return T_knn
