@@ -13,7 +13,6 @@ jtfs_params = dict(
             average_fr = True,
 )
 
-
 def JTFS_forward(input):
     """
     Return phi(x)

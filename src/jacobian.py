@@ -35,14 +35,39 @@ def M_forward(theta, G):
 def M_factory(logscale,Phi):
     """
     Return M = f(theta)
+
+    We use a forward strategy for the gradient calculation based on the dimensions at the different steps of the pipeline 
+    2 different functions are available in Torch, one might work better depending on Phi and the hardware, try both to be sure
     
     phi: perceptual distance function
     logscale: theta scale (True/False)
-    FTM_constants: constants for the ftm synth
     """
     S_from_theta = S_factory(logscale,Phi)
     G = torch.func.jacfwd(S_from_theta)
     #G = functools.partial(torch.autograd.functional.jacobian, func=S_from_theta, create_graph=False,strategy="forward-mode",vectorize=True) 
     return functools.partial(M_forward,G=G)
 
+def compute_all_S(DF,Phi,logscale):
+    """
+    Return T_S with T_S[i,:] = S(DF[i,:]) = (phi o g)(DF[i,:])
+    
+    DF: tensor with the dataset (DF[i,:] = theta_i)
+    phi: perceptual distance function
+    logscale: theta scale (True/False)
+    """
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    n = DF.size(dim=0)
+
+    S = Phi(ftm.rectangular_drum(DF[0,:], logscale, **FTM_constants))
+    T_S = torch.zeros(n,S.size(dim=0)).to(device)
+    
+    T_S[0,:] = S
+    print("S computation: ",1,"/",n)
+
+    #TODO improve this somehow ?
+    for id in range(1,n):
+        T_S[id,:] = Phi(ftm.rectangular_drum(DF[id,:], logscale, **FTM_constants))
+        print("S computation: ",id+1,"/",n)
+
+    return T_S
