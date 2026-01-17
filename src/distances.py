@@ -1,6 +1,3 @@
-from src.ftm import rectangular_drum
-from src.ftm import constants as FTM_constants
-import functools
 import torch
 
 def Ploss_distance(theta_c,theta_r):
@@ -10,7 +7,7 @@ def Ploss_distance(theta_c,theta_r):
     theta_r,theta_c: reference and candidate points
     """
     dt = torch.sub(theta_r,theta_c)
-    return torch.matmul(dt,torch.transpose(dt,0,-1))
+    return torch.dot(dt,dt)
 
 def Bruteforce_distance(S_c,S_r):
     """
@@ -20,7 +17,7 @@ def Bruteforce_distance(S_c,S_r):
     S_r: (phi o g)(theta_r) precalculated
     """
     dt = torch.sub(S_r, S_c)
-    return torch.matmul(dt,torch.transpose(dt,0,-1))
+    return torch.dot(dt,dt)
 
 def PerceptualKNN_distance(theta_c,theta_r,M_r):
     """
