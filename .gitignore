@@ -3,3 +3,6 @@ src/__pycache__
 default_parameters.csv
 anaconda_projects/
 test.ipynb
+param_dataset.csv
+S_dataset.parquet
+S_dataset_full.parquet
