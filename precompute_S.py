@@ -19,13 +19,11 @@ from rich.progress import (
     SpinnerColumn
 )
 
-# Ensure these paths/modules are available in your environment
 from src.ftm import constants as FTM_constants
 from src.phi import JTFS_forward
 from src.ftm import rectangular_drum
 from src.dataset_utils import theta_ds_create
 
-# --- GLOBAL STORAGE FOR WORKERS ---
 active_workers = None
 
 def init_worker(counter):
@@ -53,7 +51,6 @@ if __name__ == '__main__':
     except RuntimeError:
         pass
 
-    # --- CONFIGURATION ---
     logscale = True
     bounds = [['omega', 'tau', 'p', 'd', 'alpha'], [(2.4, 3.8), (0.4, 3), (-5, -0.7), (-5, -0.5), (10e-05, 1)]]
     num_processes = 4
@@ -76,7 +73,7 @@ if __name__ == '__main__':
 
     results_buffer = []
     parquet_writer = None 
-    total_written = 0  # Tracker for the row_id column
+    total_written = 0
 
     def get_speed(task):
         return f"{task.speed:.2f}" if task.speed else "0.00"
@@ -110,18 +107,16 @@ if __name__ == '__main__':
                 )
 
                 if len(results_buffer) >= write_batch_size:
-                    progress.update(task_id, description="[bold red]Fast Save", status="[red]DISK I/O")
+                    progress.update(task_id, description="[bold red]Writing", status="")
                     progress.refresh()
                     
-                    # Convert buffer to DataFrame
                     chunk_df = pd.DataFrame(torch.stack(results_buffer).numpy())
                     chunk_df.columns = chunk_df.columns.astype(str) 
                     
-                    # Add physical ID column for indexing
+                    # id column needed for indexing when reading 
                     chunk_df['row_id'] = np.arange(total_written, total_written + len(chunk_df))
                     total_written += len(chunk_df)
                     
-                    # Write to Parquet
                     table = pa.Table.from_pandas(chunk_df, preserve_index=False)
                     if parquet_writer is None:
                         parquet_writer = pq.ParquetWriter(ResultPath, table.schema)
@@ -133,9 +128,8 @@ if __name__ == '__main__':
                     progress.update(task_id, description="Computing", status="")
                     progress.refresh()
 
-        # Final Cleanup for remaining rows
         if results_buffer:
-            progress.update(task_id, description="[bold green]Final Save", status="")
+            progress.update(task_id, description="[bold red]Writing", status="")
             chunk_df = pd.DataFrame(torch.stack(results_buffer).numpy())
             chunk_df.columns = chunk_df.columns.astype(str)
             chunk_df['row_id'] = np.arange(total_written, total_written + len(chunk_df))
@@ -149,4 +143,3 @@ if __name__ == '__main__':
         parquet_writer.close()
 
     print(f"Results saved to {ResultPath}")
-    print(f"Total rows indexed: {total_written}")
