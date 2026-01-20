@@ -40,7 +40,8 @@ def Knn(DF,i_r,k,phi,logscale,distance_method,S_data_path):
     elif(distance_method=='Bruteforce'):
         # Setup
         parquet_file = pq.ParquetFile(S_data_path)
-        S_r = S_ds_read_given_rows(S_data_path, [i_r]).to(device) #This takes a lot of time but we do it once so..
+        S_r_T = S_ds_read_given_rows(S_data_path, [i_r]) #This takes a lot of time but we do it once so..
+        S_r = S_r_T[0,:].to(device)
         distance = distance_factory(distance_method)
         distance_batch = torch.func.vmap(functools.partial(distance,S_r=S_r))
         # Computing
