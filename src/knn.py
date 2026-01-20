@@ -2,7 +2,7 @@ import torch
 import functools
 from src.distances import distance_factory
 from src.jacobian import M_factory
-from src.dataset_utils import S_ds_read_single_row
+from src.dataset_utils import S_ds_read_given_rows
 import pyarrow.parquet as pq
 import numpy as np
 import tqdm
@@ -40,7 +40,7 @@ def Knn(DF,i_r,k,phi,logscale,distance_method,S_data_path):
     elif(distance_method=='Bruteforce'):
         # Setup
         parquet_file = pq.ParquetFile(S_data_path)
-        S_r = S_ds_read_single_row(S_data_path, i_r).to(device) #This takes a lot of time but we do it once so..
+        S_r = S_ds_read_given_rows(S_data_path, [i_r]).to(device) #This takes a lot of time but we do it once so..
         distance = distance_factory(distance_method)
         distance_batch = torch.func.vmap(functools.partial(distance,S_r=S_r))
         # Computing

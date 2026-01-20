@@ -21,11 +21,11 @@ With the full parameters dataset (subdiv = 10) the precomputations dataset will 
 
 ## Running the KNN tests 
 
-The code to run is in the KNN section of the main notebook, the Bruteforce method requires the precomputed values, the other 2 methods do not.
+The code to run is in the KNN notebook, the Bruteforce method requires the precomputed values, the other 2 methods do not.
 
 ## Checking the results 
 
-The Method characterization section of the main notebook contains a few different test to check the accuracy of the different methods.
+The Method characterization section of the KNN notebook contains a few different test to check the accuracy of the different methods.
 
 For example, with the full parameter dataset : 
 
