@@ -15,7 +15,7 @@ def Knn(DF,i_r,k,phi,logscale,distance_method,S_data_path):
     DF: dataframe of the points*
     i_r: if of the reference point
     k: neighbours count
-    distance_method: method for computing the distance (P-loss/Bruteforce/Perceptual-KNN)
+    distance_method: method for computing the distance (P-loss/Bruteforce/PNP)
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     theta_r = DF[i_r,:]
@@ -28,7 +28,7 @@ def Knn(DF,i_r,k,phi,logscale,distance_method,S_data_path):
         # Computing
         T_dist = distance_batch(DF)
 
-    elif(distance_method=='Perceptual-KNN'):
+    elif(distance_method=='PNP'):
         # Setup
         M = M_factory(logscale,phi)
         M_r = M(theta_r)

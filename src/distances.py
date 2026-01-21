@@ -19,7 +19,7 @@ def Bruteforce_distance(S_c,S_r):
     dt = torch.sub(S_r, S_c)
     return torch.dot(dt,dt)
 
-def PerceptualKNN_distance(theta_c,theta_r,M_r):
+def PNP_distance(theta_c,theta_r,M_r):
     """
     Return (theta_r - theta_c).T * M(theta_r) * (theta_r - theta_c)
 
@@ -33,11 +33,11 @@ def distance_factory(distance_method):
     """
     Return distance = f(candidate,reference) with types depending on the method used
 
-    distance_method: method for computing the distance (P-loss/Bruteforce/Perceptual-KNN)
+    distance_method: method for computing the distance (P-loss/Bruteforce/PNP)
     """
     if(distance_method=='P-loss'):
         return Ploss_distance
     elif(distance_method=='Bruteforce'):
         return Bruteforce_distance
-    elif(distance_method=='Perceptual-KNN'):
-        return PerceptualKNN_distance
+    elif(distance_method=='PNP'):
+        return PNP_distance
