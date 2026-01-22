@@ -12,7 +12,7 @@ def Knn(DF,i_r,k,phi,logscale,distance_method,S_data_path):
     """
     Return T_knn = [[theta_r1_1nn,theta_r1_2nn,...],[theta_r2_1nn,theta_r2_2nn,...],...]
     
-    DF: dataframe of the points*
+    DF: dataframe of the points
     i_r: if of the reference point
     k: neighbours count
     distance_method: method for computing the distance (P-loss/Bruteforce/PNP)
