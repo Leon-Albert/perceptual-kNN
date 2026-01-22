@@ -2,7 +2,7 @@ import torch
 import functools
 from src.distances import distance_factory
 from src.jacobian import M_factory
-from src.dataset_utils import S_ds_read_single_row
+from src.dataset_utils import S_ds_read_given_rows
 import pyarrow.parquet as pq
 import numpy as np
 import tqdm
@@ -12,10 +12,10 @@ def Knn(DF,i_r,k,phi,logscale,distance_method,S_data_path):
     """
     Return T_knn = [[theta_r1_1nn,theta_r1_2nn,...],[theta_r2_1nn,theta_r2_2nn,...],...]
     
-    DF: dataframe of the points*
+    DF: dataframe of the points
     i_r: if of the reference point
     k: neighbours count
-    distance_method: method for computing the distance (P-loss/Bruteforce/Perceptual-KNN)
+    distance_method: method for computing the distance (P-loss/Bruteforce/PNP)
     """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     theta_r = DF[i_r,:]
@@ -28,7 +28,7 @@ def Knn(DF,i_r,k,phi,logscale,distance_method,S_data_path):
         # Computing
         T_dist = distance_batch(DF)
 
-    elif(distance_method=='Perceptual-KNN'):
+    elif(distance_method=='PNP'):
         # Setup
         M = M_factory(logscale,phi)
         M_r = M(theta_r)
@@ -40,7 +40,8 @@ def Knn(DF,i_r,k,phi,logscale,distance_method,S_data_path):
     elif(distance_method=='Bruteforce'):
         # Setup
         parquet_file = pq.ParquetFile(S_data_path)
-        S_r = S_ds_read_single_row(S_data_path, i_r).to(device) #This takes a lot of time but we do it once so..
+        S_r_T = S_ds_read_given_rows(S_data_path, [i_r]) #This takes a lot of time but we do it once so..
+        S_r = S_r_T[0,:].to(device)
         distance = distance_factory(distance_method)
         distance_batch = torch.func.vmap(functools.partial(distance,S_r=S_r))
         # Computing

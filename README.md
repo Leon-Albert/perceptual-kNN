@@ -1,15 +1,10 @@
 # perceptual-kNN
 
+Finding the perceptual neighbours of sound generated from a drum syntheziser, using different methods to approximate the distance in the perceptual domain
+
 ## Dependencies
 
-Standard packages :
-  -  Pytorch
-  -  Numpy
-  -  Pandas
-  -  Matplotlib
-
-Specific packages :
-  - jtfs-gpu (differentiable Kymatio JTFS) : https://github.com/cyrusasfa/jtfs-gpu (install instructions available in the repository)
+The only non-standard python package is jtfs-gpu (differentiable Kymatio JTFS) : https://github.com/cyrusasfa/jtfs-gpu (install instructions available in the repository)
 
 ## Pre-computing the (phi o g)(theta) 
 
@@ -21,16 +16,12 @@ With the full parameters dataset (subdiv = 10) the precomputations dataset will 
 
 ## Running the KNN tests 
 
-The code to run is in the KNN section of the main notebook, the Bruteforce method requires the precomputed values, the other 2 methods do not.
+The code to run is in the KNN notebook, the Bruteforce method requires the precomputed values, the other 2 methods do not.
 
 ## Checking the results 
 
-The Method characterization section of the main notebook contains a few different test to check the accuracy of the different methods.
+The Method characterization section of the KNN notebook contains a few different test to check the accuracy of the different methods.
 
-For example, with the full parameter dataset : 
+For example, the methods comparaison : 
 
-![plot](./examples/result_example.png)
-
-## Misc
-
-- FTM Synth tests in examples folder
+![plot](./results/result_comparaison.png)
