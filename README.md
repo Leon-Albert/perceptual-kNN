@@ -25,3 +25,7 @@ The Method characterization section of the KNN notebook contains a few different
 For example, the methods comparaison : 
 
 ![plot](./results/result_comparaison.png)
+
+## Hearing examples
+
+Some audio examples can be heard here : https://leon-albert.github.io/perceptual-kNN/ 
