@@ -6,3 +6,5 @@ test.ipynb
 param_dataset.csv
 S_dataset.parquet
 S_dataset_full.parquet
+KnnG_full.graphml
+tgGraph_full.pt

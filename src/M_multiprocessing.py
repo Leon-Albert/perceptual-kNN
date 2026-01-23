@@ -2,7 +2,7 @@ import torch
 
 _worker_M_func = None
 
-def init_worker(M_factory_func, logscale, phi, device_str):
+def init_worker_M(M_factory_func, logscale, phi, device_str):
     """
     Initializes the M function once per worker process.
     """
@@ -10,7 +10,7 @@ def init_worker(M_factory_func, logscale, phi, device_str):
     device = torch.device(device_str)
     _worker_M_func = M_factory_func(logscale, phi)
 
-def compute_task(args):
+def compute_task_M(args):
     """
     Run M on a single row.
     """
