@@ -52,10 +52,10 @@ if __name__ == '__main__':
         pass
 
     logscale = True
-    bounds = [['omega', 'tau', 'p', 'd', 'alpha'], [(2.4, 3.8), (0.4, 3), (-5, -0.7), (-5, -0.5), (10e-05, 1)]]
+    bounds = [['tau', 'p', 'd', 'alpha'], [(0.4, 3), (-5, -0.7), (-5, -0.5), (10e-05, 1)]]
     num_processes = 4
-    write_batch_size = 5000  
-    num_max_tensor = 100000   
+    write_batch_size = 100
+    num_max_tensor = 10000   
 
     FolderPath = os.path.join(sys.path[0], "data", "precompute_S")
     ResultPath = os.path.join(FolderPath, "S_dataset.parquet")

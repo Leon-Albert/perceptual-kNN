@@ -18,6 +18,9 @@ constants = {
 
 def rectangular_drum(theta, logscale, **constants):
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    theta = torch.cat((torch.ones(theta.size(dim=0)).to(device)*3.1,theta),dim=0)
+
     w11 = 10 ** theta[0] if logscale else theta[0]
     p = 10 ** theta[2] if logscale else theta[2]
     D = 10 ** theta[3] if logscale else theta[3]
