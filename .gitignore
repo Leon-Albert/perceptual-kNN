@@ -9,3 +9,4 @@ S_dataset_full.parquet
 KnnG_full.graphml
 tgGraph_full.pt
 tgGraph_2000h_4k.pt
+*.pt
