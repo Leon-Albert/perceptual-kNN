@@ -2,7 +2,7 @@ import torch
 import tqdm
 import torch_geometric as tg
 import pyarrow
-
+import numpy as np
 
 class graph_constructor: 
 
@@ -22,16 +22,16 @@ class graph_constructor:
       LM.append(self.M_func(self.DF[i,:]))
     return torch.stack(LM,dim=0).to(self.device)
   
-  def _V_from_A():
-    V = [[] for l in self.H.size(dim=0)]
+  def _V_from_A(self):
+    V = [[] for l in range(torch.max(self.H)+1)]
     for i in range(self.A.size(dim=0)):
-      V[self.A[i]].append(i)
+      V[self.A[i].item()].append(i)
     return V
   
   def _allocation(self):
     diff = self.DF[self.H].unsqueeze(0) - self.DF.unsqueeze(1)
     distances = torch.einsum('nka,kab,nkb->nk', diff, self.M_hub, diff)
-    return torch.argmin(distances, dim=1)
+    return self.H[torch.argmin(distances, dim=1).cpu()],torch.argmin(distances, dim=1).cpu()
 
   def _criteria(self,iA,iB,iC):
     v_stack = torch.stack([
@@ -41,25 +41,25 @@ class graph_constructor:
       self.DF[iC, :] - self.DF[iA, :]
     ]).to(self.device)
     m_stack = torch.stack([
-      self.M_hub[iB, :, :],
-      self.M_hub[iB, :, :],
-      self.M_hub[iA, :, :],
-      self.M_hub[iC, :, :]
+      self.M_hub[self.Aindex[iB], :, :],
+      self.M_hub[self.Aindex[iB], :, :],
+      self.M_hub[self.Aindex[iA], :, :],
+      self.M_hub[self.Aindex[iC], :, :]
     ]).to(self.device)
     distances = torch.einsum('bn, bnm, bm -> b', v_stack, m_stack, v_stack)
-    return (distances[0]+distances[1])/(distances[3]+distances[4])
+    return (distances[0]+distances[1])/(distances[2]+distances[3])
 
   def _choose_hub(self):
     Lkmax_pair = []
-    LRk_pair = []
+    LRkmax_pair = []
     for i_pair in range(len(self.LP)):
       pair = self.LP[i_pair]
-      candidats = torch.cat((self.V[pair[0]][],self.V[pair[1]][]),0)
+      candidats = torch.cat((torch.tensor(self.V[pair[0]]),torch.tensor(self.V[pair[1]])),0)
       LRk = []
       for k in candidats:
         Rk = 0
-        for n in self.V[pair[0],:]:
-          for m in self.V[pair[1],:]:
+        for n in self.V[pair[0]]:
+          for m in self.V[pair[1]]:
             Rk += self._criteria(n,k,m)
         LRk.append(Rk)
       Lkmax_pair.append(torch.argmax(LRk,dim=0))
@@ -89,8 +89,8 @@ class graph_constructor:
 
   def _compute_row(self,theta_c,M_c,theta_r,M_r):
     # M_r (single matrix) and M_c (batched matrix)
-    d1 = _distance_pnp(theta_c, theta_r, M_r)
-    d2 = _distance_pnp(theta_r, theta_c, M_c)
+    d1 = self._distance_pnp(theta_c, theta_r, M_r)
+    d2 = self._distance_pnp(theta_r, theta_c, M_c)
     return (d1 + d2) / 2
 
   
@@ -98,11 +98,11 @@ class graph_constructor:
   
   def initialize(self):
     #Initialize with 2 random hubs
-    self.H = torch.randint(0,N,(2,1)) 
-    self.M_hub = self._M_from_index(H)
-    self.A = self._allocation()
+    self.H = torch.randint(0,self.N,(2,1)).squeeze(1) 
+    self.M_hub = self._M_from_index([self.H[0].item(),self.H[1].item()])
+    self.A,self.Aindex = self._allocation()
     self.V = self._V_from_A()
-    self.LP = [(H[0],H[1])]
+    self.LP = [(self.H[0].item(),self.H[1].item())]
 
   def S_hub_from_dataset(self, ds_path):
     id_hub_list = self.H.tolist()
@@ -112,32 +112,32 @@ class graph_constructor:
       table = parquet_file.read_row_group(i)
       mask = pyarrow.parquet.is_in(table["row_id"], pyarrow.array(id_hub_list))
       filtered_table = table.filter(mask)
-      S_batch_cpu = torch.from_numpy(.array(filtered_table.drop(["row_id"])))
+      S_batch_cpu = torch.from_numpy(np.array(filtered_table.drop(["row_id"])))
       S_hub.append(S_batch_cpu)
     self.S_hub = torch.cat(S_hub)
     return self.S_hub 
 
   def construct_hubs(self):
-    for i in tqdm.tqdm(range(self.max__iter_hubs),desc="Constructing hubs...):
-      _iter(self)
+    for i in tqdm.tqdm(range(self.max__iter_hubs),desc="Constructing hubs..."):
+      self._iter()
 
   def construct_edges(self, k, batch_size=128):
-    M_all = self.M_hub[self.A].to(device)  
+    M_all = self.M_hub[self.A].to(self.device)  
     sources_list = []
     targets_list = []
     weights_list = []
     for i in tqdm.tqdm(range(0, self.N, batch_size), desc='Constructing edges...'):
       start = i
-      end = min(i + batch_size, num_nodes)          
-      batch_theta = DF[start:end]   
+      end = min(i + batch_size, self.N)          
+      batch_theta = self.DF[start:end]   
       batch_M = M_all[start:end]     
       dists_batch = []
       for b in range(end - start):
-        d_row = _compute_row(DF, M_all, batch_theta[b], batch_M[b]).cpu()
+        d_row = self._compute_row(self.DF, M_all, batch_theta[b], batch_M[b]).cpu()
         dists_batch.append(d_row)
       dists_batch = torch.stack(dists_batch)
       vals, cols = torch.topk(dists_batch, k=k+1, dim=1, largest=False)
-      rows = torch.arange(start, end, device=device).unsqueeze(1).repeat(1, k+1).cpu()
+      rows = torch.arange(start, end, device=self.device).unsqueeze(1).repeat(1, k+1).cpu()
       mask = rows != cols
       valid_rows = rows[mask]
       valid_cols = cols[mask]
@@ -157,7 +157,7 @@ class graph_constructor:
     self.edge_attr = all_weights
     
   def construct_graph(self):
-    self.graph = tg.data.Data(x=DF, edge_index=self.edge_index, edge_attr=self.edge_attr)
+    self.graph = tg.data.Data(x=self.DF, edge_index=self.edge_index, edge_attr=self.edge_attr)
 
   def save_to_graphml(self, path):   
     edge_index = self.graph.edge_index.cpu().numpy()
