@@ -34,6 +34,7 @@ class graph_constructor:
     return self.H[torch.argmin(distances, dim=1).cpu()],torch.argmin(distances, dim=1).cpu()
 
   def _criteria(self,iA,iB,iC):
+
     v_stack = torch.stack([
       self.DF[iA, :] - self.DF[iB, :],
       self.DF[iB, :] - self.DF[iC, :],
@@ -52,12 +53,22 @@ class graph_constructor:
   def _choose_hub(self):
     Lkmax_pair = []
     LRkmax_pair = []
+
+    print('Loop 1: ',len(self.LP))
+
     for i_pair in range(len(self.LP)):
       pair = self.LP[i_pair]
       candidats = torch.cat((torch.tensor(self.V[pair[0]]),torch.tensor(self.V[pair[1]])),0)
       LRk = []
+
+      print('Loop 2: ',candidats.size(dim=0))
+
       for k in candidats:
         Rk = 0
+
+        print('Loop 3: ',len(self.V[pair[0]]))
+        print('Loop 4: ',len(self.V[pair[1]]))
+
         for n in self.V[pair[0]]:
           for m in self.V[pair[1]]:
             Rk += self._criteria(n,k,m)
@@ -119,6 +130,8 @@ class graph_constructor:
 
   def construct_hubs(self):
     for i in tqdm.tqdm(range(self.max__iter_hubs),desc="Constructing hubs..."):
+      print('H: ',self.H)
+      print('LP: ',self.LP)
       self._iter()
 
   def construct_edges(self, k, batch_size=128):
