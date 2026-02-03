@@ -31,67 +31,79 @@ class graph_constructor:
   def _allocation(self):
     diff = self.DF[self.H].unsqueeze(0) - self.DF.unsqueeze(1)
     distances = torch.einsum('nka,kab,nkb->nk', diff, self.M_hub, diff)
-    return self.H[torch.argmin(distances, dim=1).cpu()],torch.argmin(distances, dim=1).cpu()
+    Ai = torch.argmin(distances, dim=1).cpu()
+    for i in range(self.H.size(dim=0)):
+      Ai[self.H[i]] = i
+    return self.H[Ai],Ai.to(self.device)
+  
+  def _criteria(self, pair, k, max_test=100):
+    l1 = torch.tensor(list(self.V[pair[0]]), device=self.device).long()
+    l2 = torch.tensor(list(self.V[pair[1]]), device=self.device).long()
+    
+    idx1 = torch.randperm(len(l1))[:max_test]
+    idx2 = torch.randperm(len(l2))[:max_test]
+    n_indices = l1[idx1] 
+    m_indices = l2[idx2] 
 
-  def _criteria(self,iA,iB,iC):
+    N_grid, M_grid = torch.meshgrid(n_indices, m_indices, indexing='ij')
+    N_flat = N_grid.reshape(-1)
+    M_flat = M_grid.reshape(-1)
+    K_val = torch.full_like(N_flat, k)
 
-    v_stack = torch.stack([
-      self.DF[iA, :] - self.DF[iB, :],
-      self.DF[iB, :] - self.DF[iC, :],
-      self.DF[iA, :] - self.DF[iC, :],
-      self.DF[iC, :] - self.DF[iA, :]
-    ]).to(self.device)
-    m_stack = torch.stack([
-      self.M_hub[self.Aindex[iB], :, :],
-      self.M_hub[self.Aindex[iB], :, :],
-      self.M_hub[self.Aindex[iA], :, :],
-      self.M_hub[self.Aindex[iC], :, :]
-    ]).to(self.device)
-    distances = torch.einsum('bn, bnm, bm -> b', v_stack, m_stack, v_stack)
-    return (distances[0]+distances[1])/(distances[2]+distances[3])
+    df_n = self.DF[N_flat]
+    df_m = self.DF[M_flat]
+    df_k = self.DF[K_val]
+
+    m_hub_k = self.M_hub[self.Aindex[K_val]]
+    m_hub_n = self.M_hub[self.Aindex[N_flat]]
+    m_hub_m = self.M_hub[self.Aindex[M_flat]]
+
+    def get_dist(v_diff, m_mat):
+        # v_diff: (Batch, Dim), m_mat: (Batch, Dim, Dim)
+        return torch.einsum('bn, bnm, bm -> b', v_diff, m_mat, v_diff)
+
+    d0 = get_dist(df_n - df_k, m_hub_k)
+    d1 = get_dist(df_k - df_m, m_hub_k)
+    d2 = get_dist(df_n - df_m, m_hub_n)
+    d3 = get_dist(df_m - df_n, m_hub_m)
+
+    Rk_total = torch.sum((d0 + d1) / (d2 + d3))
+    return Rk_total.item()
 
   def _choose_hub(self):
     Lkmax_pair = []
     LRkmax_pair = []
-
-    print('Loop 1: ',len(self.LP))
-
     for i_pair in range(len(self.LP)):
       pair = self.LP[i_pair]
       candidats = torch.cat((torch.tensor(self.V[pair[0]]),torch.tensor(self.V[pair[1]])),0)
       LRk = []
-
-      print('Loop 2: ',candidats.size(dim=0))
-
       for k in candidats:
-        Rk = 0
-
-        print('Loop 3: ',len(self.V[pair[0]]))
-        print('Loop 4: ',len(self.V[pair[1]]))
-
-        for n in self.V[pair[0]]:
-          for m in self.V[pair[1]]:
-            Rk += self._criteria(n,k,m)
-        LRk.append(Rk)
-      Lkmax_pair.append(torch.argmax(LRk,dim=0))
+        LRk.append(self._criteria(pair,k))
+      Lkmax_pair.append(torch.argmax(torch.tensor(LRk),dim=0))
       LRkmax_pair.append(LRk[Lkmax_pair[-1]])
-    return Lkmax_pair[torch.argmax(LRkmax_pair,dim=0)]
+    return Lkmax_pair[torch.argmax(torch.tensor(LRkmax_pair),dim=0)]
   
   def _new_hub(self):
     k = self._choose_hub()
-    self.H = torch.cat((self.H, k), 0)
-    self.M_hub = torch.cat((self.M_hub, self.M_from_index([k]).unsqeeze(0)), 0).to(self.device)
-    self.A = self._allocation()
-    self.V = self.V_from_A()
+    self.H = torch.cat((self.H, torch.tensor([k.item()])), 0)
+    self.M_hub = torch.cat((self.M_hub, self._M_from_index([k])), 0).to(self.device)
+    self.A,self.Aindex = self._allocation()
+    self.V = self._V_from_A()
 
   def _iter(self):
-    old_A = self.A
+    old_A = self.A.clone()
     self._new_hub()
-    LP = []
-    for k in range(self.N):
-      if old_A[k] != self.A[k]:
-        LP.append((old_A[k],self.A[k]))
-    self.LP = list(set(LP))
+    new_LP = []
+    changed_mask = (old_A != self.A)
+    if changed_mask.any():
+        changed_from = old_A[changed_mask]
+        changed_to = self.A[changed_mask]
+        pairs = torch.stack([changed_from, changed_to], dim=1)
+        unique_pairs = torch.unique(pairs, dim=0)
+        new_LP = [tuple(p.tolist()) for p in unique_pairs]
+    else:
+      pass #Should never happen in theory
+    return new_LP
 
   def _distance_pnp(self,theta1,theta2,M):
     #'...' in einsum to handle both batched and single inputs
@@ -130,31 +142,34 @@ class graph_constructor:
 
   def construct_hubs(self):
     for i in tqdm.tqdm(range(self.max__iter_hubs),desc="Constructing hubs..."):
-      print('H: ',self.H)
-      print('LP: ',self.LP)
       self._iter()
 
   def construct_edges(self, k, batch_size=128):
-    M_all = self.M_hub[self.A].to(self.device)  
+    M_all = self.M_hub[self.Aindex].to(self.device)  
     sources_list = []
     targets_list = []
     weights_list = []
+
     for i in tqdm.tqdm(range(0, self.N, batch_size), desc='Constructing edges...'):
       start = i
       end = min(i + batch_size, self.N)          
       batch_theta = self.DF[start:end]   
       batch_M = M_all[start:end]     
       dists_batch = []
+
       for b in range(end - start):
         d_row = self._compute_row(self.DF, M_all, batch_theta[b], batch_M[b]).cpu()
         dists_batch.append(d_row)
+
       dists_batch = torch.stack(dists_batch)
       vals, cols = torch.topk(dists_batch, k=k+1, dim=1, largest=False)
       rows = torch.arange(start, end, device=self.device).unsqueeze(1).repeat(1, k+1).cpu()
       mask = rows != cols
+
       valid_rows = rows[mask]
       valid_cols = cols[mask]
       valid_vals = vals[mask]
+
       # Both ways to get a symmetric graph
       sources_list.append(valid_rows)
       targets_list.append(valid_cols)
@@ -162,6 +177,7 @@ class graph_constructor:
       sources_list.append(valid_cols)
       targets_list.append(valid_rows)
       weights_list.append(valid_vals)
+
     all_sources = torch.cat(sources_list)
     all_targets = torch.cat(targets_list)
     all_weights = torch.cat(weights_list)
