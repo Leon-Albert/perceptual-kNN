@@ -14,29 +14,49 @@ class graph_constructor:
     self.M_func = M_func
 
   
-  '''Private Methods'''
+  '''General Private Methods'''
+
+  def scalar_product_pnp(self, theta1, theta2, thetaA, M):
+    v1 = theta1 - thetaA
+    v2 = theta2 - thetaA
+    return torch.einsum('...i,...ij,...j->...', v1, M, v2)
+
+  def _distance_pnp(self,theta1,theta2,M):
+    #'...' in einsum to handle both batched and single inputs
+    return self.scalar_product_pnp(theta1,theta1,theta2,M)
 
   def _M_from_index(self,Li):
     LM = []
     for i in Li:
-      LM.append(self.M_func(self.DF[i,:]))
+      M = self.M_func(self.DF[i,:])
+      LM.append(M)
     return torch.stack(LM,dim=0).to(self.device)
   
   def _V_from_A(self):
     V = [[] for l in range(torch.max(self.H)+1)]
-    for i in range(self.A.size(dim=0)):
-      V[self.A[i].item()].append(i)
+    for i in range(self.H[self.A].size(dim=0)):
+      V[self.H[self.A][i].item()].append(i)
     return V
   
   def _allocation(self):
-    diff = self.DF[self.H].unsqueeze(0) - self.DF.unsqueeze(1)
-    distances = torch.einsum('nka,kab,nkb->nk', diff, self.M_hub, diff)
-    Ai = torch.argmin(distances, dim=1).cpu()
-    for i in range(self.H.size(dim=0)):
-      Ai[self.H[i]] = i
-    return self.H[Ai],Ai.to(self.device)
+    hubs_idx = self.H.flatten()
+    K = hubs_idx.size(0)
+
+    diff = self.DF.unsqueeze(1) - self.DF[hubs_idx].unsqueeze(0)
+    distances = torch.einsum('nki,kij,nkj->nk', diff, self.M_hub, diff)
+        
+    Ai_index = torch.argmin(distances, dim=1)
+    
+    # Force hubs to be allocated to themselves
+    hub_range = torch.arange(K, device=self.device)
+    Ai_index.scatter_(0, hubs_idx, hub_range)
+    
+    return Ai_index
   
-  def _criteria(self, pair, k, max_test=100):
+
+  '''Hub Selection Private Methods'''
+  
+  def _criteria(self, pair, k, max_test=200):
     l1 = torch.tensor(list(self.V[pair[0]]), device=self.device).long()
     l2 = torch.tensor(list(self.V[pair[1]]), device=self.device).long()
     
@@ -54,18 +74,14 @@ class graph_constructor:
     df_m = self.DF[M_flat]
     df_k = self.DF[K_val]
 
-    m_hub_k = self.M_hub[self.Aindex[K_val]]
-    m_hub_n = self.M_hub[self.Aindex[N_flat]]
-    m_hub_m = self.M_hub[self.Aindex[M_flat]]
+    m_hub_k = self.M_hub[self.A[K_val]]
+    m_hub_n = self.M_hub[self.A[N_flat]]
+    m_hub_m = self.M_hub[self.A[M_flat]]
 
-    def get_dist(v_diff, m_mat):
-        # v_diff: (Batch, Dim), m_mat: (Batch, Dim, Dim)
-        return torch.einsum('bn, bnm, bm -> b', v_diff, m_mat, v_diff)
-
-    d0 = get_dist(df_n - df_k, m_hub_k)
-    d1 = get_dist(df_k - df_m, m_hub_k)
-    d2 = get_dist(df_n - df_m, m_hub_n)
-    d3 = get_dist(df_m - df_n, m_hub_m)
+    d0 = self._distance_pnp(df_n,df_k,m_hub_k)
+    d1 = self._distance_pnp(df_k,df_m,m_hub_k)
+    d2 = self._distance_pnp(df_n,df_m,m_hub_n)
+    d3 = self._distance_pnp(df_m,df_n,m_hub_m)
 
     Rk_total = torch.sum((d0 + d1) / (d2 + d3))
     return Rk_total.item()
@@ -85,9 +101,17 @@ class graph_constructor:
   
   def _new_hub(self):
     k = self._choose_hub()
-    self.H = torch.cat((self.H, torch.tensor([k.item()])), 0)
-    self.M_hub = torch.cat((self.M_hub, self._M_from_index([k])), 0).to(self.device)
-    self.A,self.Aindex = self._allocation()
+    if isinstance(k, torch.Tensor):
+        k = k.item()
+    
+    new_h_idx = torch.tensor([k], device=self.device, dtype=torch.long)
+    self.H = torch.cat((self.H, new_h_idx), dim=0)
+    
+    new_M = self._M_from_index([k])
+    self.M_hub = torch.cat((self.M_hub, new_M), dim=0)
+    
+    self.A = self._allocation()
+    
     self.V = self._V_from_A()
 
   def _iter(self):
@@ -96,37 +120,29 @@ class graph_constructor:
     new_LP = []
     changed_mask = (old_A != self.A)
     if changed_mask.any():
-        changed_from = old_A[changed_mask]
-        changed_to = self.A[changed_mask]
+        changed_from = self.H[old_A][changed_mask]
+        changed_to = self.H[self.A][changed_mask]
         pairs = torch.stack([changed_from, changed_to], dim=1)
         unique_pairs = torch.unique(pairs, dim=0)
         new_LP = [tuple(p.tolist()) for p in unique_pairs]
     else:
       pass #Should never happen in theory
     return new_LP
-
-  def _distance_pnp(self,theta1,theta2,M):
-    #'...' in einsum to handle both batched and single inputs
-    v = theta1 - theta2
-    return torch.einsum('...i,...ij,...j->...', v, M, v) 
-
-  def _compute_row(self,theta_c,M_c,theta_r,M_r):
-    # M_r (single matrix) and M_c (batched matrix)
-    d1 = self._distance_pnp(theta_c, theta_r, M_r)
-    d2 = self._distance_pnp(theta_r, theta_c, M_c)
-    return (d1 + d2) / 2
-
+  
   
   '''Public Methods'''
   
   def initialize(self):
-    #Initialize with 2 random hubs
-    self.H = torch.randint(0,self.N,(2,1)).squeeze(1) 
-    self.M_hub = self._M_from_index([self.H[0].item(),self.H[1].item()])
-    self.A,self.Aindex = self._allocation()
+    perm = torch.randperm(self.N, device=self.device)
+    self.H = perm[:2] 
+    
+    self.M_hub = self._M_from_index(self.H.tolist())
+    
+    self.A = self._allocation()
     self.V = self._V_from_A()
-    self.LP = [(self.H[0].item(),self.H[1].item())]
-
+    
+    self.LP = [(self.H[0].item(), self.H[1].item())]
+  
   def S_hub_from_dataset(self, ds_path):
     id_hub_list = self.H.tolist()
     parquet_file = pyarrow.parquet.ParquetFile(ds_path)
@@ -141,14 +157,24 @@ class graph_constructor:
     return self.S_hub 
 
   def construct_hubs(self):
+    self.Histo = []
     for i in tqdm.tqdm(range(self.max__iter_hubs),desc="Constructing hubs..."):
+
+      self.Histo.append(torch.bincount(self.A))
+
       self._iter()
 
   def construct_edges(self, k, batch_size=128):
-    M_all = self.M_hub[self.Aindex].to(self.device)  
+    M_all = self.M_hub[self.A].to(self.device)  
     sources_list = []
     targets_list = []
     weights_list = []
+
+    def compute_row(theta_c,M_c,theta_r,M_r):
+      # M_r (single matrix) and M_c (batched matrix)
+      d1 = self._distance_pnp(theta_c, theta_r, M_r)
+      d2 = self._distance_pnp(theta_r, theta_c, M_c)
+      return (d1 + d2) / 2
 
     for i in tqdm.tqdm(range(0, self.N, batch_size), desc='Constructing edges...'):
       start = i
@@ -158,7 +184,7 @@ class graph_constructor:
       dists_batch = []
 
       for b in range(end - start):
-        d_row = self._compute_row(self.DF, M_all, batch_theta[b], batch_M[b]).cpu()
+        d_row = compute_row(self.DF, M_all, batch_theta[b], batch_M[b]).cpu()
         dists_batch.append(d_row)
 
       dists_batch = torch.stack(dists_batch)
