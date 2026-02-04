@@ -16,14 +16,10 @@ class graph_constructor:
   
   '''General Private Methods'''
 
-  def scalar_product_pnp(self, theta1, theta2, thetaA, M):
-    v1 = theta1 - thetaA
-    v2 = theta2 - thetaA
-    return torch.einsum('...i,...ij,...j->...', v1, M, v2)
-
   def _distance_pnp(self,theta1,theta2,M):
     #'...' in einsum to handle both batched and single inputs
-    return self.scalar_product_pnp(theta1,theta1,theta2,M)
+    v = theta1 - theta2
+    return torch.einsum('...i,...ij,...j->...', v, M, v)
 
   def _M_from_index(self,Li):
     LM = []
@@ -44,105 +40,72 @@ class graph_constructor:
 
     diff = self.DF.unsqueeze(1) - self.DF[hubs_idx].unsqueeze(0)
     distances = torch.einsum('nki,kij,nkj->nk', diff, self.M_hub, diff)
-        
-    Ai_index = torch.argmin(distances, dim=1)
+ 
+    min_dists, A = torch.min(distances, dim=1)
     
-    # Force hubs to be allocated to themselves
+    self.dists_to_hub = min_dists
+    
+    # hubs have to be allocated to themselves
     hub_range = torch.arange(K, device=self.device)
-    Ai_index.scatter_(0, hubs_idx, hub_range)
+    A.scatter_(0, hubs_idx, hub_range)
     
-    return Ai_index
+    return A
   
 
   '''Hub Selection Private Methods'''
   
-  def _criteria(self, pair, k, max_test=200):
-    l1 = torch.tensor(list(self.V[pair[0]]), device=self.device).long()
-    l2 = torch.tensor(list(self.V[pair[1]]), device=self.device).long()
-    
-    idx1 = torch.randperm(len(l1))[:max_test]
-    idx2 = torch.randperm(len(l2))[:max_test]
-    n_indices = l1[idx1] 
-    m_indices = l2[idx2] 
-
-    N_grid, M_grid = torch.meshgrid(n_indices, m_indices, indexing='ij')
-    N_flat = N_grid.reshape(-1)
-    M_flat = M_grid.reshape(-1)
-    K_val = torch.full_like(N_flat, k)
-
-    df_n = self.DF[N_flat]
-    df_m = self.DF[M_flat]
-    df_k = self.DF[K_val]
-
-    m_hub_k = self.M_hub[self.A[K_val]]
-    m_hub_n = self.M_hub[self.A[N_flat]]
-    m_hub_m = self.M_hub[self.A[M_flat]]
-
-    d0 = self._distance_pnp(df_n,df_k,m_hub_k)
-    d1 = self._distance_pnp(df_k,df_m,m_hub_k)
-    d2 = self._distance_pnp(df_n,df_m,m_hub_n)
-    d3 = self._distance_pnp(df_m,df_n,m_hub_m)
-
-    Rk_total = torch.sum((d0 + d1) / (d2 + d3))
-    return Rk_total.item()
-
   def _choose_hub(self):
-    Lkmax_pair = []
-    LRkmax_pair = []
-    for i_pair in range(len(self.LP)):
-      pair = self.LP[i_pair]
-      candidats = torch.cat((torch.tensor(self.V[pair[0]]),torch.tensor(self.V[pair[1]])),0)
-      LRk = []
-      for k in candidats:
-        LRk.append(self._criteria(pair,k))
-      Lkmax_pair.append(torch.argmax(torch.tensor(LRk),dim=0))
-      LRkmax_pair.append(LRk[Lkmax_pair[-1]])
-    return Lkmax_pair[torch.argmax(torch.tensor(LRkmax_pair),dim=0)]
+    # Identify dominant hub (the one with most points)
+    counts = torch.bincount(self.A)
+    dominant_hub_idx = torch.argmax(counts).item()
+    
+    # Get indices and their distances
+    mask = (self.A == dominant_hub_idx)
+    candidate_indices = torch.nonzero(mask, as_tuple=False).flatten()
+    candidate_dists = self.dists_to_hub[mask]
   
-  def _new_hub(self):
-    k = self._choose_hub()
-    if isinstance(k, torch.Tensor):
-        k = k.item()
+    sorted_vals, sorted_idx = torch.sort(candidate_dists, descending=True)
     
-    new_h_idx = torch.tensor([k], device=self.device, dtype=torch.long)
-    self.H = torch.cat((self.H, new_h_idx), dim=0)
+    n_candidates = len(candidate_indices)
     
-    new_M = self._M_from_index([k])
-    self.M_hub = torch.cat((self.M_hub, new_M), dim=0)
+    # Define the window of valid candidates, we ignore the top 10% (outliers) and bottom 50% (too close to center)
+    start = int(n_candidates * 0.10) 
+    end = int(n_candidates * 0.30)
     
-    self.A = self._allocation()
+    # Safety check for small clusters
+    if start >= end:
+        picked_idx_local = 0
+    else:
+        picked_idx_local = torch.randint(start, end, (1,)).item()
+        
+    original_idx_in_candidates = sorted_idx[picked_idx_local]
+    new_hub_id = candidate_indices[original_idx_in_candidates].item()
     
-    self.V = self._V_from_A()
+    return new_hub_id
 
   def _iter(self):
-    old_A = self.A.clone()
-    self._new_hub()
-    new_LP = []
-    changed_mask = (old_A != self.A)
-    if changed_mask.any():
-        changed_from = self.H[old_A][changed_mask]
-        changed_to = self.H[self.A][changed_mask]
-        pairs = torch.stack([changed_from, changed_to], dim=1)
-        unique_pairs = torch.unique(pairs, dim=0)
-        new_LP = [tuple(p.tolist()) for p in unique_pairs]
-    else:
-      pass #Should never happen in theory
-    return new_LP
-  
+    k = self._choose_hub()
+    new_h_idx = torch.tensor([k], device=self.device, dtype=torch.long)
+    self.H = torch.cat((self.H, new_h_idx), dim=0)
+
+    new_M = self._M_from_index([k])
+    self.M_hub = torch.cat((self.M_hub, new_M), dim=0)
+
+    self.A = self._allocation()
+    self.V = self._V_from_A()
+
   
   '''Public Methods'''
   
-  def initialize(self):
+  def initialize(self,nbr_of_initial_hubs=1):
     perm = torch.randperm(self.N, device=self.device)
-    self.H = perm[:2] 
+    self.H = perm[:nbr_of_initial_hubs] 
     
     self.M_hub = self._M_from_index(self.H.tolist())
     
     self.A = self._allocation()
     self.V = self._V_from_A()
-    
-    self.LP = [(self.H[0].item(), self.H[1].item())]
-  
+      
   def S_hub_from_dataset(self, ds_path):
     id_hub_list = self.H.tolist()
     parquet_file = pyarrow.parquet.ParquetFile(ds_path)
@@ -157,11 +120,7 @@ class graph_constructor:
     return self.S_hub 
 
   def construct_hubs(self):
-    self.Histo = []
     for i in tqdm.tqdm(range(self.max__iter_hubs),desc="Constructing hubs..."):
-
-      self.Histo.append(torch.bincount(self.A))
-
       self._iter()
 
   def construct_edges(self, k, batch_size=128):
@@ -246,4 +205,52 @@ class graph_constructor:
           f.write(f'    <edge source="n{sources[idx]}" target="n{targets[idx]}"/>\n')
       f.write('  </graph>\n')
       f.write('</graphml>\n')                       
+
+
+  '''Methods for quality checking the hubs'''
+
+  def analyze_hub_quality(self):
+    num_hubs = self.H.size(0)
+    counts = torch.bincount(self.A, minlength=num_hubs)
+    
+    hub_stats = []
+    for i in range(num_hubs):
+      mask = (self.A == i)
+      pop_size = counts[i].item()
+      
+      # Default values for empty or single-point hubs
+      avg_dist, max_dist, std_dist = 0.0, 0.0, 0.0
+      
+      if pop_size > 0:
+          assigned_dists = self.dists_to_hub[mask]
+          avg_dist = assigned_dists.mean().item()
+          max_dist = assigned_dists.max().item()
+          
+          # Standard deviation only exists if there is more than 1 point
+          if pop_size > 1:
+              std_dist = assigned_dists.std().item()
+          
+      hub_stats.append({
+          'index': i,
+          'size': pop_size,
+          'avg_dist': avg_dist,
+          'max_dist': max_dist,
+          'std_dist': std_dist
+      })
+  
+    return hub_stats
+
+  def print_quality_report(self):
+    """Prints the distribution of hub sizes and their respective approximation quality."""
+    stats = self.analyze_hub_quality()
+    
+    print(f"\n{'Hub Index':<10} | {'Size':<8} | {'Avg Dist':<12} | {'Std Dev':<12} | {'Max Dist':<12}")
+    print("-" * 70)
+    
+    # Sort by size descending
+    sorted_stats = sorted(stats, key=lambda x: x['size'], reverse=True)
+    
+    for s in sorted_stats:
+        print(f"{s['index']:<10} | {s['size']:<8} | {s['avg_dist']:<12.4e} | {s['std_dist']:<12.4e} | {s['max_dist']:<12.4e}")
+
 
