@@ -6,4 +6,5 @@ test.ipynb
 param_dataset.csv
 
 *.parquet
-*.pt
+
+tgGraph.pt

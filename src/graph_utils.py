@@ -68,7 +68,7 @@ class graph_constructor:
     
     n_candidates = len(candidate_indices)
     
-    # Define the window of valid candidates, we ignore the top 10% (outliers) and bottom 50% (too close to center)
+    # Define the window of valid candidates, we ignore the top 10% (outliers) and bottom 30% (too close to center)
     start = int(n_candidates * 0.10) 
     end = int(n_candidates * 0.30)
     
@@ -205,6 +205,19 @@ class graph_constructor:
           f.write(f'    <edge source="n{sources[idx]}" target="n{targets[idx]}"/>\n')
       f.write('  </graph>\n')
       f.write('</graphml>\n')                       
+
+
+  def save_hubs(self,folder_path):
+    torch.save(self.H,folder_path+'H.pt')
+    torch.save(self.M_hub,folder_path+'M_hub.pt')
+    torch.save(self.A,folder_path+'A.pt')
+    torch.save(self.V,folder_path+'V.pt')
+
+  def load_hubs(self,folder_path):
+    self.H = torch.load(folder_path+'H.pt')
+    self.M_hub = torch.load(folder_path+'M_hub.pt')
+    self.A = torch.load(folder_path+'A.pt')
+    self.V = torch.load(folder_path+'V.pt')
 
 
   '''Methods for quality checking the hubs'''
