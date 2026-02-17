@@ -3,6 +3,8 @@ import tqdm
 import torch_geometric as tg
 import pyarrow
 import numpy as np
+import pandas as pd
+
 
 class graph_constructor: 
 
@@ -169,7 +171,83 @@ class graph_constructor:
     edge_index = torch.stack([all_sources, all_targets], dim=0)
     self.edge_index = edge_index
     self.edge_attr = all_weights
-    
+
+
+  def construct_edges_groundtruth(self, k, path_S, batch_size=512, block_size=512):
+    # 1. Load data to CPU
+    df_S = pd.read_parquet(path_S)
+    data_tensor = torch.tensor(df_S.values, dtype=torch.float32)
+    N, D = data_tensor.shape
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    sources_list = []
+    targets_list = []
+    weights_list = []
+
+    # 2. Outer loop: Iterate through "Query" batches
+    for i in tqdm.tqdm(range(0, N, batch_size), desc='Computing Neighbors'):
+        end_i = min(i + batch_size, N)
+        # Move only the current batch of rows to GPU
+        batch_q = data_tensor[i:end_i].to(device)
+        
+        # Buffer to store distances from this batch to ALL other rows
+        # Shape: (batch_size, N)
+        batch_distances = torch.zeros((end_i - i, N), device=device)
+
+        # 3. Inner loop: Compare batch_q against "Reference" blocks
+        for j in range(0, N, block_size):
+            end_j = min(j + block_size, N)
+            batch_r = data_tensor[j:end_j].to(device)
+            
+            # Compute distances for this block and store in buffer
+            # torch.cdist is optimized for this
+            batch_distances[:, j:end_j] = torch.cdist(batch_q, batch_r, p=2)
+            
+            del batch_r # Free GPU memory immediately
+
+        # 4. Find Top K+1 on GPU
+        vals, indices = torch.topk(batch_distances, k=k+1, dim=1, largest=False)
+        
+        # Move results back to CPU
+        vals = vals.cpu()
+        indices = indices.cpu()
+
+        # 5. Process each row in the batch to remove self-loops and format edges
+        for local_idx in range(indices.shape[0]):
+            global_id = i + local_idx
+            
+            neighbor_indices = indices[local_idx]
+            neighbor_weights = vals[local_idx]
+
+            # Mask out the self-distance (where index == global_id)
+            mask = neighbor_indices != global_id
+            valid_cols = neighbor_indices[mask][:k]
+            valid_vals = neighbor_weights[mask][:k]
+
+            # Construct edge lists (Source -> Target)
+            curr_id_t = torch.full((valid_cols.size(0),), global_id, dtype=torch.long)
+            
+            # Add Direct edges
+            sources_list.append(curr_id_t)
+            targets_list.append(valid_cols)
+            weights_list.append(valid_vals)
+            
+            # Add Symmetric edges
+            sources_list.append(valid_cols)
+            targets_list.append(curr_id_t)
+            weights_list.append(valid_vals)
+
+        del batch_q, batch_distances
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+
+    # 6. Final assembly
+    self.edge_index = torch.stack([
+        torch.cat(sources_list), 
+        torch.cat(targets_list)
+    ], dim=0)
+    self.edge_attr = torch.cat(weights_list)
+
   def construct_graph(self):
     self.graph = tg.data.Data(x=self.DF, edge_index=self.edge_index, edge_attr=self.edge_attr)
 
