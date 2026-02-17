@@ -65,7 +65,7 @@ if __name__ == '__main__':
     if os.path.exists(ResultPath): os.remove(ResultPath)
 
     DF_in_memory = theta_ds_create(bounds=bounds, subdiv=10, path=DatasetPath, write=True)
-    rows_to_process = [torch.from_numpy(row).to(torch.float) for row in DF_in_memory.iloc[:num_max_tensor].values]
+    rows_to_process = [torch.from_numpy(row).to(torch.float64) for row in DF_in_memory.iloc[:num_max_tensor].values]
 
     shared_counter = mp.Value('i', 0)
     S_bound = partial(S_logic, logscale_val=logscale)
