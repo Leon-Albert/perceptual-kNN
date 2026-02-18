@@ -59,7 +59,7 @@ class graph_constructor:
   '''Hub Selection Private Methods'''
   
   def _choose_hub(self):
-    # Identify dominant hub (the one with most points)
+
     counts = torch.bincount(self.A)
     dominant_hub_idx = torch.argmax(counts).item()
     
@@ -72,7 +72,7 @@ class graph_constructor:
     
     n_candidates = len(candidate_indices)
     
-    # Define the window of valid candidates, we ignore the top 10% (outliers) and bottom 30% (too close to center)
+    # window of valid candidates, we ignore the top 10% (outliers) and bottom 30% (too close to center)
     start = int(n_candidates * 0.10) 
     end = int(n_candidates * 0.30)
     
@@ -171,19 +171,37 @@ class graph_constructor:
     all_targets = torch.cat(targets_list)
     all_weights = torch.cat(weights_list)
     edge_index = torch.stack([all_sources, all_targets], dim=0)
-    self.edge_index = edge_index
-    self.edge_attr = all_weights
+
+    # coalesce removes duplicates (i in j's knn but also j in i's knn)
+    self.edge_index, self.edge_attr = tg.utils.coalesce(edge_index, all_weights, reduce="mean")
+
+  
+  def construct_edges_param(self, k):
+    dists = torch.cdist(self.DF, self.DF, p=2)
+    vals, indices = torch.topk(dists, k=k+1, dim=1, largest=False)
+    
+    sources = torch.arange(self.N, device=self.DF.device).unsqueeze(1).expand(-1, k).reshape(-1)
+    targets = indices[:, 1:].reshape(-1)
+    weights = vals[:, 1:].reshape(-1)
+
+    edge_index = torch.stack([
+        torch.cat([sources, targets]),
+        torch.cat([targets, sources])
+    ], dim=0)
+    
+    edge_attr = torch.cat([weights, weights])
+
+    # coalesce removes duplicates (i in j's knn but also j in i's knn)
+    self.edge_index, self.edge_attr = tg.utils.coalesce(edge_index, edge_attr, reduce="mean")
+
 
   def construct_edges_groundtruth(self, k, path_S, query_batch_size=256, ref_block_size=512):
     parquet_file = pq.ParquetFile(path_S)
     N = parquet_file.metadata.num_rows
     D = parquet_file.metadata.num_columns
-
     sources_list = []
     targets_list = []
     weights_list = []
-
-    # 2. Outer Loop: Stream "Query" batches
     global_query_idx = 0
     query_pbar = tqdm.tqdm(total=N, desc='Total Progress')
     
@@ -194,27 +212,23 @@ class graph_constructor:
 
         batch_distances = torch.zeros((curr_q_size, N), device=self.device)
 
-        # 3. Inner Loop: Stream "Reference" blocks to compare against
         global_ref_idx = 0
         for ref_arrow in parquet_file.iter_batches(batch_size=ref_block_size):
             batch_r_np = ref_arrow.to_pandas().values
             batch_r = torch.tensor(batch_r_np, dtype=torch.float32).to(self.device)
             curr_ref_size = batch_r.size(0)
 
-            # Compute distances and store in buffer
             dists = torch.cdist(batch_q, batch_r, p=2)
             batch_distances[:, global_ref_idx : global_ref_idx + curr_ref_size] = dists
             
             global_ref_idx += curr_ref_size
             del batch_r
 
-        # 4. Get Top K+1
         vals, indices = torch.topk(batch_distances, k=k+1, dim=1, largest=False)
         
         vals = vals.cpu()
         indices = indices.cpu()
 
-        # 5. Process edges (Filter self-loops)
         for i in range(curr_q_size):
             u_id = global_query_idx + i
             
@@ -227,30 +241,29 @@ class graph_constructor:
 
             u_tensor = torch.full((final_v.size(0),), u_id, dtype=torch.long)
 
-            # Forward edges: u -> v
             sources_list.append(u_tensor)
             targets_list.append(final_v)
             weights_list.append(final_w)
 
-            # Backward edges: v -> u
             sources_list.append(final_v)
             targets_list.append(u_tensor)
             weights_list.append(final_w)
 
-        # Update counters and clean GPU
         global_query_idx += curr_q_size
         query_pbar.update(curr_q_size)
         
         del batch_q, batch_distances
-
     query_pbar.close()
 
-    # 6. Assembly
-    self.edge_index = torch.stack([
+    edge_index = torch.stack([
         torch.cat(sources_list), 
         torch.cat(targets_list)
     ], dim=0)
-    self.edge_attr = torch.cat(weights_list)
+    edge_attr = torch.cat(weights_list)
+
+    # coalesce removes duplicates (i in j's knn but also j in i's knn)
+    self.edge_index, self.edge_attr = tg.utils.coalesce(edge_index, edge_attr, reduce="mean")
+
 
   def construct_graph(self):
     self.graph = tg.data.Data(x=self.DF, edge_index=self.edge_index, edge_attr=self.edge_attr)
