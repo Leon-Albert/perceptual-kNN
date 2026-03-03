@@ -124,8 +124,32 @@ class graph_constructor:
     return self.S_hub 
 
   def construct_hubs(self):
-    for i in tqdm.tqdm(range(self.max__iter_hubs),desc="Constructing hubs..."):
+    i=0
+    while i <= self.max__iter_hubs:
+      print(f"Constructing - i={i}")
       self._iter()
+      i+=1
+
+      if i%100 == 0:
+        counts = torch.bincount(self.A, minlength=self.H.size(0))
+        
+        # Identify hubs that have more than 1 point (themselves)
+        keep_mask = counts > 1
+        
+        # If all hubs are lonely, or only 20 or less are lonely we skip (so we're not stuck at the end)
+        if not keep_mask.any() or self.max__iter_hubs - len(keep_mask)<20:
+            continue
+            
+        # Update Hub indices and their corresponding M
+        self.H = self.H[keep_mask]
+        self.M_hub = self.M_hub[keep_mask]
+        
+        # Re-allocate all points to the remaining hubs
+        self.A = self._allocation()
+        self.V = self._V_from_A()
+
+        i=len(keep_mask)
+
 
   def construct_edges(self, k, batch_size=128):
     M_all = self.M_hub[self.A].to(self.device)  
