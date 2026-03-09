@@ -1,0 +1,23 @@
+[project]
+name = "perceptual-knn"
+version = "1.0"
+description = "Finding the perceptual neighbours of sound generated from a drum syntheziser, using different methods to approximate the distance in the perceptual domain"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "ipykernel>=7.2.0",
+    "kymatio",
+    "matplotlib>=3.10.8",
+    "networkx>=3.6.1",
+    "numpy>=2.4.2",
+    "pandas>=3.0.1",
+    "pyarrow>=23.0.1",
+    "scipy>=1.17.1",
+    "torch==2.10.0",
+    "torch-geometric>=2.7.0",
+    "tqdm>=4.67.3",
+]
+
+[tool.uv.sources]
+kymatio = { git = "https://github.com/Leon-Albert/jtfs-gpu/" }
+
