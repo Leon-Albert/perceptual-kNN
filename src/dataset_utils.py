@@ -10,11 +10,11 @@ import tqdm
 """Parameters Dataset"""
 
 def theta_ds_create(bounds, subdiv, path, write=False):
-    Dbase = np.zeros((subdiv, 5))
-    for i in range(5):
+    Dbase = np.zeros((subdiv, 4))
+    for i in range(4):
         Dbase[:, i] = np.linspace(bounds[1][i][0], bounds[1][i][1], subdiv)
     baseDF = pd.DataFrame(data=Dbase, columns=bounds[0])
-    D = list(product(baseDF['omega'], baseDF['tau'], baseDF['p'], baseDF['d'], baseDF['alpha']))
+    D = list(product(baseDF['tau'], baseDF['p'], baseDF['d'], baseDF['alpha']))
     DF = pd.DataFrame(data=D, columns=bounds[0])
     if write:
         DF.to_csv(path, index=False)

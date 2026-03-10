@@ -25,6 +25,6 @@ def JTFS_forward(input):
     # apply "stable" log transformation
     # the number 1e3 is ad hoc and of the order of 1/mu where mu=1e-3 is the
     # median value of Sx across all paths
+    #log1p_Sx = torch.log1p(torch.max(0,Sx_array*1e3) + torch.eps)
     log1p_Sx = torch.log1p(Sx_array*1e3)
-
     return log1p_Sx

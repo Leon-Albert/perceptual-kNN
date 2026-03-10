@@ -52,10 +52,10 @@ if __name__ == '__main__':
         pass
 
     logscale = True
-    bounds = [['omega', 'tau', 'p', 'd', 'alpha'], [(2.4, 3.8), (0.4, 3), (-5, -0.7), (-5, -0.5), (10e-05, 1)]]
+    bounds = [['tau', 'p', 'd', 'alpha'], [(0.4, 3), (-5, -0.7), (-5, -0.5), (10e-05, 1)]]
     num_processes = 4
-    write_batch_size = 5000  
-    num_max_tensor = 100000   
+    write_batch_size = 100
+    num_max_tensor = 10000   
 
     FolderPath = os.path.join(sys.path[0], "data", "precompute_S")
     ResultPath = os.path.join(FolderPath, "S_dataset.parquet")
@@ -65,7 +65,7 @@ if __name__ == '__main__':
     if os.path.exists(ResultPath): os.remove(ResultPath)
 
     DF_in_memory = theta_ds_create(bounds=bounds, subdiv=10, path=DatasetPath, write=True)
-    rows_to_process = [torch.from_numpy(row).to(torch.float) for row in DF_in_memory.iloc[:num_max_tensor].values]
+    rows_to_process = [torch.from_numpy(row).to(torch.float64) for row in DF_in_memory.iloc[:num_max_tensor].values]
 
     shared_counter = mp.Value('i', 0)
     S_bound = partial(S_logic, logscale_val=logscale)

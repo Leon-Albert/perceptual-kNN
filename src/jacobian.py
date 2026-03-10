@@ -2,6 +2,7 @@ import functools
 import src.ftm as ftm
 from src.ftm import constants as FTM_constants
 import torch
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 def x_from_theta(theta, logscale):
@@ -25,7 +26,7 @@ def S_factory(logscale, Phi):
     return functools.partial(S_forward, logscale=logscale, Phi=Phi)      
 
 def M_from_G(G):
-    return torch.matmul(torch.transpose(G,0,1),G)
+    return torch.matmul(torch.transpose(G,0,1),G) 
 
 def M_forward(theta, G):
     """
