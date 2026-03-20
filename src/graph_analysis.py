@@ -6,14 +6,9 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
+from scipy.io.wavfile import write
 
 # Constants controlling the physical simulation of the drum and audio output.
-# x1, x2   : spatial coordinates for the excitation point on the drum membrane
-# h         : time step for the simulation
-# l0        : fundamental length/frequency parameter (set to pi)
-# m1, m2    : mass parameters for the drum model
-# sr        : sample rate in Hz (22050 = standard audio sample rate)
-# dur       : duration in samples (2^16 = 65536 samples ≈ 2.97 seconds at 22050 Hz)
 constants = {
     "x1": 0.4,
     "x2": 0.4,
@@ -24,6 +19,7 @@ constants = {
     "sr": 22050,
     "dur":2**16
 }
+audio_path = "results/ways/audio/"
 
 def audioFromNode(node, g=None):
     """
@@ -57,7 +53,7 @@ def audioFromNode(node, g=None):
         node_params = node
     
     # Prepend theta with [3] as a fixed leading parameter
-    theta = [3]
+    theta = []
     for x in node_params:
         theta.append(float(x))
     
@@ -65,8 +61,7 @@ def audioFromNode(node, g=None):
     node_audio = np.array(node_audio)
     return node_audio
 
-
-def playSequence(g, path, hop_time=1000):
+def playSequence(path,g=None, hop_time=1000,rec=False,recName=None):
     """
     Play a sequence of graph nodes as overlapping audio events.
 
@@ -95,37 +90,12 @@ def playSequence(g, path, hop_time=1000):
         node_audio = audioFromNode(node, g)
         sequence[hop_lenght*i:hop_lenght*(i) + node_song_duration] += node_audio
         i += 1
-    
-    # Scale down to avoid clipping at output
-    sequence = sequence * 0.9
-    display(Audio(sequence, rate=22050))
 
-
-def playSequence_from_parameters(path, hop_time=1000):
-    """
-    Play a sequence of audio events from raw parameter lists (no graph required).
-
-    Similar to `playSequence`, but each element of `path` is a list of raw
-    synthesis parameters rather than a node ID in a graph.
-
-    Parameters
-    ----------
-    path : list of list
-        Ordered list of parameter vectors, each passed to `audioFromNode`.
-    hop_time : int, optional
-        Time offset between successive notes in milliseconds. Default is 1000 ms.
-    """
-    node_song_duration = 65536  # Fixed duration per node in samples (2^16)
-    hop_lenght = int(hop_time * constants["sr"] / 1000)  # Convert ms to samples
-    N = len(path)
-    
-    # Allocate output buffer large enough for all notes with their offsets
-    sequence = np.zeros(node_song_duration + hop_lenght * (N - 1))
-    i = 0
-    for node in path:
-        node_audio = audioFromNode(node)
-        sequence[hop_lenght*i:hop_lenght*(i) + node_song_duration] += node_audio
-        i += 1
+    #Save audio if needed
+    if rec:
+        if recName is None:
+            recName = "Saved_audio"
+        write(audio_path + recName + ".wav", constants["sr"], sequence)
     
     # Scale down to avoid clipping at output
     sequence = sequence * 0.9
@@ -315,7 +285,7 @@ def get_cumul_distances(g, path):
 
 
 # Path to the folder containing KNN graph files
-graph_path = "data\Knn-G"
+graph_path = "data/Knn-G"
 
 def load_graph(graph_Name, edge_type='dist', verbose=True):
     """
@@ -350,6 +320,8 @@ def load_graph(graph_Name, edge_type='dist', verbose=True):
 
 
 # ///////// Graph plot /////////////
+
+from matplotlib import cm
 
 def connectedComponentsHisto(graph: nx.Graph, graph_Name, plot=True):
     """
@@ -414,9 +386,31 @@ def plot_degree_histo(G, graph_name):
     return degree_sequence
 
 def plotSubGraph(g,node_list):
+    #Extract subgraph
     G = g.subgraph(node_list)
     plt.figure()
-    nx.draw_networkx(G,edge_cmap=colormaps["Greys"])
+    
+    # Draw the graph
+    pos = nx.spring_layout(G)  # Positions for all nodes
+    edge_weights = [G[u][v].get('weight', 1) for u, v in G.edges()]  # Default to 1 if no weight is found
+    
+    # Create a colormap
+    cmap = cm.grey
+    
+    # Normalize the edge weights for colormap
+    norm = plt.Normalize(vmin=min(edge_weights), vmax=max(edge_weights))
+    
+    # Draw the graph
+    pos = nx.spring_layout(G)  # Positions for all nodes
+    edges = list(G.edges())
+    
+    # Draw nodes
+    nx.draw_networkx_nodes(G, pos, node_size=500)
+
+    # Draw edges with color mapped to edge weights
+    nx.draw_networkx_edges(G, pos, edgelist=edges, width=2,
+                           edge_color=edge_weights, edge_cmap=cmap, edge_vmin=min(edge_weights), edge_vmax=max(edge_weights))
+    
     plt.show()
 
 # ///////// Graph clustering /////////////
@@ -425,7 +419,7 @@ def plotSubGraph(g,node_list):
 clusteringTechnics = ["louvain", "leiden", "walktrap"]
 
 # Output directory for clustering figures
-pathFigure = "results\\Clustering\\"
+pathFigure = "results/Clustering/"
 
 
 def performClustering(g, clustering_technic):
@@ -590,7 +584,7 @@ def plotScoring(clustering_result, k_bounds, idxSingleComponent=None):
         plt.plot(k_list, clustering_result["score" + clusteringTechnic], label=clusteringTechnic)
     plt.legend()
     plt.title("Score of clustering for " + str(len(clusteringTechnics)) + " methods (Modularity index)")
-    plt.xlabel("k")
+    plt.xlabel("K")
     plt.ylabel("Score (Modularity index)")
     plt.savefig(pathFigure + "score_evolution.svg")
     plt.savefig(pathFigure + "score_evolution.png")
@@ -617,8 +611,8 @@ def plotComponentsCurve(nb_connected_component, k_bounds, idxSingleComponent=Non
     k_list = np.linspace(k_bounds[0], k_bounds[1], k_bounds[1] - k_bounds[0] + 1)
     plt.plot(k_list, nb_connected_component)
     plt.title("Number of connected components")
-    plt.xlabel("k")
-    plt.yscale("log")
+    plt.xlabel("K")
+    # plt.yscale("log")
     plt.ylabel("Number of connected components")
     plt.savefig(pathFigure + "Number_of_connected_components_evolution.svg")
     plt.savefig(pathFigure + "Number_of_connected_components_evolution.png")
@@ -648,7 +642,7 @@ def plotNbClusters(clustering_result, k_bounds, idxSingleComponent=None):
         plt.plot(k_list, clustering_result["nb_cluster" + clusteringTechnic], label=clusteringTechnic)
     plt.legend()
     plt.title("Number of clusters given by three clustering methods")
-    plt.xlabel("k")
+    plt.xlabel("K")
     plt.ylabel("Number of clusters")
     plt.yscale("log")
     plt.savefig(pathFigure + "Number_of_clusters.svg")
