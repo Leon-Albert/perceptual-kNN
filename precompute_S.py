@@ -57,7 +57,7 @@ if __name__ == '__main__':
     write_batch_size = 100
     num_max_tensor = 10000   
 
-    FolderPath = os.path.join(sys.path[0], "data", "precompute_S")
+    FolderPath = os.path.join(sys.path[0], "output")
     ResultPath = os.path.join(FolderPath, "S_dataset.parquet")
     DatasetPath = os.path.join(FolderPath, "param_dataset.csv")
 
