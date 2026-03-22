@@ -57,7 +57,7 @@ def audioFromNode(node, g=None):
     for x in node_params:
         theta.append(float(x))
     
-    node_audio = rectangular_drum(theta, True, **constants)
+    node_audio = rectangular_drum(theta, True, **constants).cpu()
     node_audio = np.array(node_audio)
     return node_audio
 
@@ -285,7 +285,7 @@ def get_cumul_distances(g, path):
 
 
 # Path to the folder containing KNN graph files
-graph_path = "data/Knn-G"
+graph_path = "output/data/graph_folder/"
 
 def load_graph(graph_Name, edge_type='dist', verbose=True):
     """
@@ -312,7 +312,7 @@ def load_graph(graph_Name, edge_type='dist', verbose=True):
     """
     if verbose:
         print("loading " + graph_Name + "...")
-    path = graph_path + "\\graphml_folder" + '\\' + graph_Name
+    path = graph_path + graph_Name
     g = nx.read_graphml(path)
     g = g.to_undirected()
     edge_correction(g, edge_type)
@@ -419,7 +419,7 @@ def plotSubGraph(g,node_list):
 clusteringTechnics = ["louvain", "leiden", "walktrap"]
 
 # Output directory for clustering figures
-pathFigure = "results/Clustering/"
+pathFigure = "output/result/clustering/"
 
 
 def performClustering(g, clustering_technic):
